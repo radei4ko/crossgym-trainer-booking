@@ -1,0 +1,1052 @@
+{
+  "name": "Trainer Booking — CrossGYM",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "trainer-booking",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "470f85f2-b753-4955-8cd5-02ab4c61d3ea",
+      "name": "GET /trainer-booking",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        -160
+      ],
+      "webhookId": "76599a7e-6ad7-44aa-b416-9e1f4799060b"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n//  Trainer Booking — CrossGYM. Stage 3.\n//  Сторінка статична (без Sheets) — миттєвий перший показ.\n//  Розклад/капасіті підвантажуються окремим запитом у фоні.\n// ============================================================\nconst DATA = {\n  clubs: [\n    { id: \"c2\", name: \"CrossGYM — 95 квартал\", addr: \"пр. Гагаріна, 4а (Плаза)\", accent: \"#4CAF50\" },\n    { id: \"c3\", name: \"CrossGYM — Вечірній\", addr: \"б-р Вечірній, 18а\", accent: \"#E8402A\" }\n  ]\n};\nconst WEEKDAY_NAMES = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];\n\nconst TEMPLATE = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n<title>Запис на тренування</title>\n<script src=\"https://telegram.org/js/telegram-web-app.js\"></script>\n<style>\n  :root {\n    --page:    var(--tg-theme-secondary-bg-color, #efeff4);\n    --card:    var(--tg-theme-bg-color, #ffffff);\n    --text:    var(--tg-theme-text-color, #000000);\n    --muted:   var(--tg-theme-hint-color, #8a8a8e);\n    --accent:  var(--tg-theme-button-color, #2481cc);\n    --onaccent:var(--tg-theme-button-text-color, #ffffff);\n    --sep:     rgba(60,60,67,.18);\n    --header:  var(--tg-theme-section-header-text-color, #8a8a8e);\n    --radius: 12px;\n  }\n  html.dark { --card: rgba(255,255,255,.07); --sep: rgba(255,255,255,.12); }\n  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }\n  html, body { height: 100%; }\n  body {\n    margin: 0; padding: 0 0 calc(24px + env(safe-area-inset-bottom));\n    min-height: 100vh;\n    min-height: var(--tg-vh, 100vh);\n    font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, sans-serif;\n    background: var(--page); color: var(--text); font-size: 17px; line-height: 1.35;\n    -webkit-font-smoothing: antialiased;\n  }\n  .shead { font-size: 13px; font-weight: 400; letter-spacing: .02em; color: var(--header); text-transform: uppercase; padding: 20px 16px 7px; }\n  .group { background: var(--card); border-radius: var(--radius); margin: 0 16px; overflow: hidden; }\n  .row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 11px 16px; min-height: 46px; background: none; border: 0; cursor: pointer; position: relative; }\n  .row + .row::before { content: ''; position: absolute; left: 16px; right: 0; top: 0; height: 1px; transform: scaleY(.5); background: var(--sep); }\n  .row:active { background: var(--sep); }\n  .row[disabled] { opacity: .4; cursor: default; }\n  .row[disabled]:active { background: none; }\n  .row.static { cursor: default; }\n  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }\n  .grow { flex: 1; min-width: 0; }\n  .title { font-size: 17px; }\n  .sub { font-size: 13px; color: var(--muted); margin-top: 1px; }\n  .chev { color: var(--muted); font-size: 20px; }\n  .primary { background: var(--accent); color: var(--onaccent); border: 0; border-radius: var(--radius);\n    width: calc(100% - 32px); margin: 20px 16px; padding: 14px; font-size: 17px; font-weight: 600; cursor: pointer; }\n  .primary[disabled] { opacity: .5; cursor: default; }\n  .backbtn { display: block; background: none; border: 0; color: var(--accent); font-size: 17px;\n    padding: 16px 16px 0; cursor: pointer; }\n  .backbtn:active { opacity: .5; }\n  .statusmsg { padding: 8px 16px 0; font-size: 14px; text-align: center; color: var(--muted); min-height: 20px; }\n  .statusmsg.ok { color: #34a853; font-weight: 600; }\n  .statusmsg.error { color: #e8402a; }\n  .cancelbtn { background: none; border: 1px solid #e8402a; color: #e8402a; border-radius: 8px;\n    padding: 6px 12px; font-size: 14px; cursor: pointer; white-space: nowrap; }\n  .cancelbtn[disabled] { opacity: .5; }\n</style>\n</head>\n<body>\n  <div id=\"app\"></div>\n\n<script>\n  const tg = window.Telegram && window.Telegram.WebApp;\n  function applyViewportHeight() {\n    if (tg && tg.viewportStableHeight) {\n      document.documentElement.style.setProperty('--tg-vh', tg.viewportStableHeight + 'px');\n    }\n  }\n  if (tg) {\n    tg.ready();\n    tg.expand();\n    applyViewportHeight();\n    tg.onEvent('viewportChanged', applyViewportHeight);\n  }\n  if (tg && tg.colorScheme === 'dark') document.documentElement.classList.add('dark');\n\n  const CLUBS = __CLUBS__;\n  const WD = __WEEKDAYS__;\n  const API_BOOK = '__API_BOOK__';\n  const API_MINE = '__API_MINE__';\n  const API_CANCEL = '__API_CANCEL__';\n  const API_SCHEDULE = '__API_SCHEDULE__';\n  const API_ADMIN = '__API_ADMIN__';\n  // Лише для показу пункту меню — реальний доступ перевіряється на сервері\n  // за підписом initData, це не про безпеку.\n  const ADMIN_TELEGRAM_ID = '7656322828';\n  const IS_ADMIN = !!(tg && tg.initDataUnsafe && tg.initDataUnsafe.user\n    && String(tg.initDataUnsafe.user.id) === ADMIN_TELEGRAM_ID);\n\n  const app = document.getElementById('app');\n  let currentClub = null;\n\n  // Розклад підвантажується у фоні одразу при відкритті — щоб перший\n  // екран (список залів) показувався миттєво, без очікування Sheets.\n  let SESSIONS = null;\n  const schedulePromise = fetch(API_SCHEDULE, { method: 'POST' })\n    .then(r => r.json())\n    .then(d => { SESSIONS = d.sessions || []; })\n    .catch(() => { SESSIONS = []; });\n\n  function showBack(fn) {\n    if (!tg || !tg.BackButton) return;\n    try {\n      if (showBack._last) tg.BackButton.offClick(showBack._last);\n      if (fn) { tg.BackButton.show(); tg.BackButton.onClick(fn); showBack._last = fn; }\n      else { tg.BackButton.hide(); showBack._last = null; }\n    } catch (e) {}\n  }\n\n  function renderClubs() {\n    currentClub = null;\n    showBack(null);\n    app.innerHTML = \\`\n      <div class=\"group\" style=\"margin-top:16px\">\n        <button class=\"row\" onclick=\"openMyBookings()\">\n          <span class=\"grow\"><div class=\"title\">Мої записи</div></span>\n          <span class=\"chev\">›</span>\n        </button>\n        \\${IS_ADMIN ? \\`<button class=\"row\" onclick=\"openAdmin()\">\n          <span class=\"grow\"><div class=\"title\">Хто записався</div></span>\n          <span class=\"chev\">›</span>\n        </button>\\` : ''}\n      </div>\n      <div class=\"shead\">Оберіть зал</div><div class=\"group\" id=\"clubs\"></div>\n    \\`;\n    document.getElementById('clubs').innerHTML = CLUBS.map(c => \\`\n      <button class=\"row\" onclick=\"openClub('\\${c.id}')\">\n        <span class=\"dot\" style=\"background:\\${c.accent}\"></span>\n        <span class=\"grow\"><div class=\"title\">\\${c.name}</div><div class=\"sub\">\\${c.addr}</div></span>\n        <span class=\"chev\">›</span>\n      </button>\\`).join('');\n  }\n\n  async function openAdmin() {\n    showBack(renderClubs);\n    app.innerHTML = '<button class=\"backbtn\" onclick=\"renderClubs()\">‹ Зали</button>'\n      + '<div class=\"shead\">Хто записався</div><div class=\"group\" id=\"admin\"><div class=\"row static\"><span class=\"grow\"><div class=\"sub\">Завантаження…</div></span></div></div>';\n    const box = document.getElementById('admin');\n    const initData = tg ? tg.initData : '';\n    try {\n      const res = await fetch(API_ADMIN, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ initData })\n      });\n      const data = await res.json();\n      const list = data.sessions || [];\n      if (!list.length) {\n        box.innerHTML = '<div class=\"row static\"><span class=\"grow\"><div class=\"sub\">Немає найближчих занять</div></span></div>';\n        return;\n      }\n      box.innerHTML = list.map(s => \\`\n        <div class=\"row static\">\n          <span class=\"grow\">\n            <div class=\"title\">\\${s.clubName} · \\${WD[s.weekday]}, \\${s.date.slice(8,10)}.\\${s.date.slice(5,7)} \\${s.time}</div>\n            <div class=\"sub\">\\${s.roster.length} з \\${s.capacity}\\${s.roster.length ? ': ' + s.roster.join(', ') : ' — поки нікого'}</div>\n          </span>\n        </div>\\`).join('');\n    } catch (e) {\n      box.innerHTML = '<div class=\"row static\"><span class=\"grow\"><div class=\"sub\">Помилка мережі, спробуйте ще раз</div></span></div>';\n    }\n  }\n\n  async function openMyBookings() {\n    showBack(renderClubs);\n    app.innerHTML = '<button class=\"backbtn\" onclick=\"renderClubs()\">‹ Зали</button>'\n      + '<div class=\"shead\">Мої записи</div><div class=\"group\" id=\"mine\"><div class=\"row static\"><span class=\"grow\"><div class=\"sub\">Завантаження…</div></span></div></div>';\n    const box = document.getElementById('mine');\n    const initData = tg ? tg.initData : '';\n    try {\n      const res = await fetch(API_MINE, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ initData })\n      });\n      const data = await res.json();\n      const list = (data.bookings || []).filter(b => !b.past);\n      if (!list.length) {\n        box.innerHTML = '<div class=\"row static\"><span class=\"grow\"><div class=\"sub\">У вас поки немає записів</div></span></div>';\n        return;\n      }\n      box.innerHTML = list.map(b => \\`\n        <div class=\"row static\">\n          <span class=\"grow\">\n            <div class=\"title\">\\${b.clubName}</div>\n            <div class=\"sub\">\\${WD[b.weekday]}, \\${b.date.slice(8,10)}.\\${b.date.slice(5,7)} · \\${b.time}</div>\n          </span>\n          \\${b.canCancel\n            ? '<button class=\"cancelbtn\" onclick=\"cancelBooking(\\\\'' + b.booking_id + '\\\\', this)\">Скасувати</button>'\n            : '<span class=\"sub\">менше 3 год</span>'}\n        </div>\\`).join('');\n    } catch (e) {\n      box.innerHTML = '<div class=\"row static\"><span class=\"grow\"><div class=\"sub\">Помилка мережі, спробуйте ще раз</div></span></div>';\n    }\n  }\n\n  async function cancelBooking(bookingId, btn) {\n    btn.disabled = true;\n    btn.textContent = '…';\n    const initData = tg ? tg.initData : '';\n    try {\n      const res = await fetch(API_CANCEL, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ initData, bookingId })\n      });\n      const data = await res.json();\n      if (data.ok) {\n        schedulePromise.then(() => {});\n        fetch(API_SCHEDULE, { method: 'POST' }).then(r => r.json()).then(d => { SESSIONS = d.sessions || []; }).catch(() => {});\n        openMyBookings();\n      } else {\n        btn.disabled = false;\n        btn.textContent = 'Скасувати';\n        if (tg && tg.HapticFeedback) { try { tg.HapticFeedback.notificationOccurred('error'); } catch (e) {} }\n        alert(data.error || 'Не вдалося скасувати');\n      }\n    } catch (e) {\n      btn.disabled = false;\n      btn.textContent = 'Скасувати';\n      alert('Помилка мережі, спробуйте ще раз');\n    }\n  }\n\n  async function openClub(id) {\n    currentClub = id;\n    showBack(renderClubs);\n    const club = CLUBS.find(c => c.id === id);\n    app.innerHTML = '<button class=\"backbtn\" onclick=\"renderClubs()\">‹ Зали</button>'\n      + '<div class=\"shead\">' + club.name + '</div><div class=\"group\" id=\"sess\"><div class=\"row static\"><span class=\"grow\"><div class=\"sub\">Завантаження…</div></span></div></div>';\n    if (SESSIONS === null) await schedulePromise;\n    if (currentClub !== id) return;\n    renderSessions(id);\n  }\n\n  function renderSessions(id) {\n    const box = document.getElementById('sess');\n    if (!box) return;\n    const list = (SESSIONS || []).filter(s => s.club === id);\n    if (!list.length) {\n      box.innerHTML = '<div class=\"row static\"><span class=\"grow\"><div class=\"sub\">Найближчих занять немає</div></span></div>';\n      return;\n    }\n    box.innerHTML = list.map((s, i) => \\`\n      <button class=\"row\" \\${s.free <= 0 ? 'disabled' : ''} onclick=\"openSession(\\${i})\" data-i=\"\\${i}\">\n        <span class=\"grow\">\n          <div class=\"title\">\\${WD[s.weekday]}, \\${s.date.slice(8,10)}.\\${s.date.slice(5,7)} · \\${s.time}</div>\n          <div class=\"sub\">\\${s.free > 0 ? 'Вільно ' + s.free + ' з ' + s.capacity : 'Місць немає'}</div>\n        </span>\n      </button>\\`).join('');\n    window.__list = list;\n  }\n\n  function openSession(i) {\n    const s = window.__list[i];\n    const club = CLUBS.find(c => c.id === s.club);\n    showBack(() => openClub(s.club));\n    app.innerHTML = \\`\n      <button class=\"backbtn\" onclick=\"openClub('\\${s.club}')\">‹ Назад</button>\n      <div class=\"shead\">Підтвердження</div>\n      <div class=\"group\">\n        <div class=\"row static\"><span class=\"grow\"><div class=\"title\">\\${club.name}</div><div class=\"sub\">\\${club.addr}</div></span></div>\n        <div class=\"row static\"><span class=\"grow\"><div class=\"title\">\\${WD[s.weekday]}, \\${s.date.slice(8,10)}.\\${s.date.slice(5,7)} о \\${s.time}</div><div class=\"sub\">Вільно \\${s.free} з \\${s.capacity}</div></span></div>\n      </div>\n      <button class=\"primary\" id=\"confirmBtn\">Записатися</button>\n      <div class=\"statusmsg\" id=\"status\"></div>\n    \\`;\n    document.getElementById('confirmBtn').onclick = () => book(s);\n  }\n\n  async function book(s) {\n    const btn = document.getElementById('confirmBtn');\n    const status = document.getElementById('status');\n    btn.disabled = true;\n    btn.textContent = 'Записую…';\n    status.className = 'statusmsg';\n    status.textContent = '';\n    const initData = tg ? tg.initData : '';\n    try {\n      const res = await fetch(API_BOOK, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ initData, club: s.club, weekday: s.weekday, time: s.time, date: s.date })\n      });\n      const data = await res.json();\n      if (data.ok) {\n        status.className = 'statusmsg ok';\n        status.textContent = '✓ Записано!';\n        try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success'); } catch (e) {}\n        fetch(API_SCHEDULE, { method: 'POST' }).then(r => r.json()).then(d => { SESSIONS = d.sessions || []; }).catch(() => {});\n        setTimeout(() => openClub(s.club), 900);\n      } else {\n        status.className = 'statusmsg error';\n        status.textContent = data.error || 'Не вдалося записатися';\n        btn.disabled = false;\n        btn.textContent = 'Записатися';\n      }\n    } catch (e) {\n      status.className = 'statusmsg error';\n      status.textContent = 'Помилка мережі, спробуйте ще раз';\n      btn.disabled = false;\n      btn.textContent = 'Записатися';\n    }\n  }\n\n  renderClubs();\n</script>\n</body>\n</html>\n`;\n\nconst html = TEMPLATE\n  .replace('__CLUBS__', JSON.stringify(DATA.clubs))\n  .replace('__WEEKDAYS__', JSON.stringify(WEEKDAY_NAMES))\n  .replace('__API_BOOK__', 'https://n8n.morthain.com/webhook/trainer-booking-book')\n  .replace('__API_MINE__', 'https://n8n.morthain.com/webhook/trainer-booking-mine')\n  .replace('__API_CANCEL__', 'https://n8n.morthain.com/webhook/trainer-booking-cancel')\n  .replace('__API_SCHEDULE__', 'https://n8n.morthain.com/webhook/trainer-booking-schedule')\n  .replace('__API_ADMIN__', 'https://n8n.morthain.com/webhook/trainer-booking-admin');\n\nreturn [{ json: { html } }];\n"
+      },
+      "id": "66297c9a-0fe9-4022-bc1e-0e6d0ca63f0c",
+      "name": "Дані клубів і HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "f07d9ad6-200d-4e53-b1c7-853f855bcb81",
+      "name": "Віддати сторінку",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trainer-booking-book",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "32927a10-3ff2-4ba7-b5be-df0d72310df3",
+      "name": "POST /trainer-booking-book",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        160
+      ],
+      "webhookId": "5e1e6471-d0c4-4f0d-bb5a-5ba925dcb727"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- SHA-256 і HMAC вручну (n8n забороняє require('crypto')) ----\n// Реалізація перенесена з crossgym-miniapp, звірена з еталоном node:crypto на 375 тестах.\nconst K256 = [\n  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2\n];\nfunction sha256(msg) {\n  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];\n  const bitLen = msg.length * 8;\n  const buf = new Uint8Array(((msg.length + 9 + 63) >> 6) << 6);\n  buf.set(msg); buf[msg.length] = 0x80;\n  const dv = new DataView(buf.buffer);\n  dv.setUint32(buf.length - 8, Math.floor(bitLen / 0x100000000));\n  dv.setUint32(buf.length - 4, bitLen >>> 0);\n  const w = new Uint32Array(64);\n  const rotr = (x, n) => (x >>> n) | (x << (32 - n));\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15] >>> 3);\n      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2] >>> 10);\n      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;\n    }\n    let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);\n      const ch = (e & f) ^ (~e & g);\n      const t1 = (h + S1 + ch + K256[i] + w[i]) >>> 0;\n      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const t2 = (S0 + maj) >>> 0;\n      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;\n    }\n    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;\n    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;\n  }\n  const out = new Uint8Array(32);\n  const odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\nfunction concatBytes(a, b) { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }\nfunction hmacSha256(key, msg) {\n  const B = 64;\n  const k = key.length > B ? sha256(key) : key;\n  const pad = new Uint8Array(B); pad.set(k);\n  const ipad = new Uint8Array(B), opad = new Uint8Array(B);\n  for (let i = 0; i < B; i++) { ipad[i] = pad[i] ^ 0x36; opad[i] = pad[i] ^ 0x5c; }\n  return sha256(concatBytes(opad, sha256(concatBytes(ipad, msg))));\n}\nfunction utf8(str) {\n  const out = [];\n  for (let i = 0; i < str.length; i++) {\n    let c = str.charCodeAt(i);\n    if (c < 0x80) out.push(c);\n    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));\n    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {\n      const c2 = str.charCodeAt(i + 1);\n      const cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);\n      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));\n      i++;\n    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));\n  }\n  return new Uint8Array(out);\n}\nfunction toHex(bytes) { let s = ''; for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0'); return s; }\nfunction equalConstTime(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\n\n// ============================================================\n//  Перевірка підпису Telegram + валідація слота проти серверних даних.\n//  Ліміт місць і сам факт існування слота беремо ЗІ СВОЄЇ таблиці,\n//  а не з тіла запиту — клієнтський JS можна підмінити.\n// ============================================================\nconst SLOTS = [\n  { club: \"c2\", weekday: 1, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 3, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 5, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 2, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 4, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 6, time: \"10:00\", capacity: 30 }\n];\n\nconst TELEGRAM_BOT_TOKEN = $env.TELEGRAM_BOT_TOKEN;\nif (!TELEGRAM_BOT_TOKEN) throw new Error('Немає змінної TELEGRAM_BOT_TOKEN в оточенні n8n');\n\nconst body = $json.body || {};\nconst initData = body.initData || '';\nif (!initData) throw new Error('initData порожній — запит не з Telegram');\n\n// URLSearchParams недоступний у пісочниці n8n — парсимо вручну.\n// '+' як пробіл — так само як робить URLSearchParams (form-urlencoded).\nfunction parseInitData(qs) {\n  const map = new Map();\n  for (const pair of qs.split('&')) {\n    if (!pair) continue;\n    const idx = pair.indexOf('=');\n    const rawKey = idx === -1 ? pair : pair.slice(0, idx);\n    const rawVal = idx === -1 ? '' : pair.slice(idx + 1);\n    map.set(\n      decodeURIComponent(rawKey.replace(/\\+/g, ' ')),\n      decodeURIComponent(rawVal.replace(/\\+/g, ' '))\n    );\n  }\n  return map;\n}\n\nconst params = parseInitData(initData);\nconst hash = params.get('hash') || '';\nparams.delete('hash');\nconst dataCheckString = Array.from(params.entries())\n  .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))\n  .map(([k, v]) => k + '=' + v)\n  .join('\\n');\n\nconst secret = hmacSha256(utf8('WebAppData'), utf8(TELEGRAM_BOT_TOKEN));\nconst calc = toHex(hmacSha256(secret, utf8(dataCheckString)));\nif (!equalConstTime(calc, hash)) throw new Error('Підпис не зійшовся — запит підроблено');\n\nconst authDate = Number(params.get('auth_date') || 0);\nif (Math.floor(Date.now() / 1000) - authDate > 86400) {\n  throw new Error('Підпис протермінований, перевідкрий застосунок');\n}\n\nconst user = JSON.parse(params.get('user') || '{}');\nif (!user.id) throw new Error('Немає user.id в initData');\n\n// ---- звіряємо слот із серверним списком, а не довіряємо тілу запиту ----\nconst club = String(body.club || '');\nconst weekday = Number(body.weekday);\nconst time = String(body.time || '');\nconst date = String(body.date || '');\n\nconst slot = SLOTS.find(s => s.club === club && s.weekday === weekday && s.time === time);\nif (!slot) throw new Error('Такого слота не існує');\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) throw new Error('Некоректна дата');\n\n// дата має відповідати дню тижня слота\nconst [y, m, d] = date.split('-').map(Number);\nconst checkDate = new Date(y, m - 1, d);\nif (checkDate.getDay() !== weekday) throw new Error('Дата не відповідає дню тижня слота');\n\nconst enteredName = String(body.clientName || '').trim().slice(0, 100);\nconst telegramName = [user.first_name, user.last_name].filter(Boolean).join(' ');\nconst clientName = enteredName || telegramName;\n\nreturn [{\n  json: {\n    telegramId: user.id,\n    clientName,\n    username: user.username || null,\n    club,\n    weekday,\n    time,\n    date,\n    capacity: slot.capacity\n  }\n}];\n"
+      },
+      "id": "188265ca-ca8d-4810-8e6c-f385eb8f04f1",
+      "name": "Перевірка підпису",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "записи"
+        },
+        "options": {}
+      },
+      "id": "8a487b92-d3da-4352-a70b-1d53aaefb14d",
+      "name": "Читати записи (POST)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -224,
+        160
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Свіжий підрахунок місць безпосередньо перед записом — щоб звузити вікно гонки\n// при одночасному записі двох людей на останнє місце.\nconst info = $('Перевірка підпису').first().json;\nconst bookings = $input.all().map(i => i.json);\n\nconst activeCount = bookings.filter(b =>\n  String(b.club_id) === info.club &&\n  Number(b.weekday) === info.weekday &&\n  String(b.time) === info.time &&\n  String(b.session_date) === info.date &&\n  String(b.status) === 'active'\n).length;\n\nconst free = info.capacity - activeCount;\n\nif (free <= 0) {\n  return [{ json: { ok: false, error: 'Вибачте, місць уже немає' } }];\n}\n\nconst bookingId = 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);\n\nreturn [{\n  json: {\n    ok: true,\n    booking_id: bookingId,\n    club_id: info.club,\n    weekday: info.weekday,\n    time: info.time,\n    session_date: info.date,\n    client_name: info.clientName,\n    client_telegram_id: info.telegramId,\n    status: 'active',\n    created_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "0d7cfa66-867a-410f-9032-67b2f0f7715f",
+      "name": "Перевірка ліміту",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "dd650a25-0299-473d-a89c-e5ce83982cb9",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b7853246-faaa-42a6-b045-e3c50b509cd5",
+      "name": "Чи є місце?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        272,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "записи"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "booking_id": "={{ $json.booking_id }}",
+            "club_id": "={{ $json.club_id }}",
+            "weekday": "={{ $json.weekday }}",
+            "time": "={{ $json.time }}",
+            "session_date": "={{ $json.session_date }}",
+            "client_name": "={{ $json.client_name }}",
+            "client_telegram_id": "={{ $json.client_telegram_id }}",
+            "status": "={{ $json.status }}",
+            "created_at": "={{ $json.created_at }}"
+          },
+          "matchingColumns": [
+            "booking_id"
+          ],
+          "schema": [
+            {
+              "id": "booking_id",
+              "displayName": "booking_id",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "club_id",
+              "displayName": "club_id",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "weekday",
+              "displayName": "weekday",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "session_date",
+              "displayName": "session_date",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "client_name",
+              "displayName": "client_name",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "client_telegram_id",
+              "displayName": "client_telegram_id",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ok",
+              "displayName": "ok",
+              "type": "string",
+              "removed": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "79ca9f66-0cce-4603-93e6-ed61a3fd31b0",
+      "name": "Записати",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        64
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true } }}",
+        "options": {}
+      },
+      "id": "be67f581-107c-40db-b106-80cc341e3c01",
+      "name": "Успіх",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        752,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error } }}",
+        "options": {}
+      },
+      "id": "3d6863c4-7b51-4cb6-b183-d93cfffd7f90",
+      "name": "Місць немає",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trainer-booking-mine",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9a99fe49-c162-407d-8214-123dff42c485",
+      "name": "POST /trainer-booking-mine",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        432
+      ],
+      "webhookId": "0e7cf3dd-aed8-4828-b0f5-f9dc67d4a305"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- SHA-256 і HMAC вручну (n8n забороняє require('crypto')) ----\nconst K256 = [\n  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2\n];\nfunction sha256(msg) {\n  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];\n  const bitLen = msg.length * 8;\n  const buf = new Uint8Array(((msg.length + 9 + 63) >> 6) << 6);\n  buf.set(msg); buf[msg.length] = 0x80;\n  const dv = new DataView(buf.buffer);\n  dv.setUint32(buf.length - 8, Math.floor(bitLen / 0x100000000));\n  dv.setUint32(buf.length - 4, bitLen >>> 0);\n  const w = new Uint32Array(64);\n  const rotr = (x, n) => (x >>> n) | (x << (32 - n));\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15] >>> 3);\n      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2] >>> 10);\n      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;\n    }\n    let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);\n      const ch = (e & f) ^ (~e & g);\n      const t1 = (h + S1 + ch + K256[i] + w[i]) >>> 0;\n      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const t2 = (S0 + maj) >>> 0;\n      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;\n    }\n    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;\n    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;\n  }\n  const out = new Uint8Array(32);\n  const odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\nfunction concatBytes(a, b) { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }\nfunction hmacSha256(key, msg) {\n  const B = 64;\n  const k = key.length > B ? sha256(key) : key;\n  const pad = new Uint8Array(B); pad.set(k);\n  const ipad = new Uint8Array(B), opad = new Uint8Array(B);\n  for (let i = 0; i < B; i++) { ipad[i] = pad[i] ^ 0x36; opad[i] = pad[i] ^ 0x5c; }\n  return sha256(concatBytes(opad, sha256(concatBytes(ipad, msg))));\n}\nfunction utf8(str) {\n  const out = [];\n  for (let i = 0; i < str.length; i++) {\n    let c = str.charCodeAt(i);\n    if (c < 0x80) out.push(c);\n    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));\n    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {\n      const c2 = str.charCodeAt(i + 1);\n      const cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);\n      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));\n      i++;\n    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));\n  }\n  return new Uint8Array(out);\n}\nfunction toHex(bytes) { let s = ''; for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0'); return s; }\nfunction equalConstTime(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\nfunction parseInitData(qs) {\n  const map = new Map();\n  for (const pair of qs.split('&')) {\n    if (!pair) continue;\n    const idx = pair.indexOf('=');\n    const rawKey = idx === -1 ? pair : pair.slice(0, idx);\n    const rawVal = idx === -1 ? '' : pair.slice(idx + 1);\n    map.set(\n      decodeURIComponent(rawKey.replace(/\\+/g, ' ')),\n      decodeURIComponent(rawVal.replace(/\\+/g, ' '))\n    );\n  }\n  return map;\n}\n\n// ============================================================\n//  Легка перевірка підпису — лише авторизація клієнта, без валідації слота.\n//  Використовується для \"Мої записи\" і скасування.\n// ============================================================\nconst TELEGRAM_BOT_TOKEN = $env.TELEGRAM_BOT_TOKEN;\nif (!TELEGRAM_BOT_TOKEN) throw new Error('Немає змінної TELEGRAM_BOT_TOKEN в оточенні n8n');\n\nconst body = $json.body || {};\nconst initData = body.initData || '';\nif (!initData) throw new Error('initData порожній — запит не з Telegram');\n\nconst params = parseInitData(initData);\nconst hash = params.get('hash') || '';\nparams.delete('hash');\nconst dataCheckString = Array.from(params.entries())\n  .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))\n  .map(([k, v]) => k + '=' + v)\n  .join('\\n');\n\nconst secret = hmacSha256(utf8('WebAppData'), utf8(TELEGRAM_BOT_TOKEN));\nconst calc = toHex(hmacSha256(secret, utf8(dataCheckString)));\nif (!equalConstTime(calc, hash)) throw new Error('Підпис не зійшовся — запит підроблено');\n\nconst authDate = Number(params.get('auth_date') || 0);\nif (Math.floor(Date.now() / 1000) - authDate > 86400) {\n  throw new Error('Підпис протермінований, перевідкрий застосунок');\n}\n\nconst user = JSON.parse(params.get('user') || '{}');\nif (!user.id) throw new Error('Немає user.id в initData');\n\nreturn [{\n  json: {\n    telegramId: user.id,\n    bookingId: body.bookingId || null\n  }\n}];\n"
+      },
+      "id": "0af00c44-152f-4b84-9def-7a2b7eaf17a6",
+      "name": "Перевірка користувача (mine)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "записи"
+        },
+        "options": {}
+      },
+      "id": "20823097-16ed-4184-87ef-6c22d57a4699",
+      "name": "Читати записи (mine)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -224,
+        432
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const CLUBS = {\n  c2: { name: \"CrossGYM — 95 квартал\", addr: \"пр. Гагаріна, 4а (Плаза)\" },\n  c3: { name: \"CrossGYM — Вечірній\", addr: \"б-р Вечірній, 18а\" }\n};\nconst info = $('Перевірка користувача (mine)').first().json;\nconst bookings = $input.all().map(i => i.json);\n\nconst mine = bookings.filter(b =>\n  String(b.client_telegram_id) === String(info.telegramId) &&\n  String(b.status) === 'active'\n);\n\nconst now = Date.now();\nconst list = mine.map(b => {\n  const [hh, mm] = String(b.time).split(':').map(Number);\n  const [y, m, d] = String(b.session_date).split('-').map(Number);\n  const sessionMs = new Date(y, m - 1, d, hh, mm).getTime();\n  const club = CLUBS[b.club_id] || { name: b.club_id, addr: '' };\n  return {\n    booking_id: b.booking_id,\n    club: b.club_id,\n    clubName: club.name,\n    clubAddr: club.addr,\n    weekday: Number(b.weekday),\n    time: b.time,\n    date: b.session_date,\n    canCancel: sessionMs >= now,\n    past: sessionMs < now\n  };\n}).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));\n\nreturn [{ json: { bookings: list } }];\n"
+      },
+      "id": "73539206-9490-4c64-ad96-33abe82e8c11",
+      "name": "Мої записи",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "c97379b8-0987-4498-b66f-2367a39b28d8",
+      "name": "Відповісти (mine)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trainer-booking-cancel",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4b31b262-2480-492f-b34b-041dbaa47988",
+      "name": "POST /trainer-booking-cancel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        624
+      ],
+      "webhookId": "94018a71-255e-4da8-8128-2acbb46e2336"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- SHA-256 і HMAC вручну (n8n забороняє require('crypto')) ----\nconst K256 = [\n  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2\n];\nfunction sha256(msg) {\n  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];\n  const bitLen = msg.length * 8;\n  const buf = new Uint8Array(((msg.length + 9 + 63) >> 6) << 6);\n  buf.set(msg); buf[msg.length] = 0x80;\n  const dv = new DataView(buf.buffer);\n  dv.setUint32(buf.length - 8, Math.floor(bitLen / 0x100000000));\n  dv.setUint32(buf.length - 4, bitLen >>> 0);\n  const w = new Uint32Array(64);\n  const rotr = (x, n) => (x >>> n) | (x << (32 - n));\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15] >>> 3);\n      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2] >>> 10);\n      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;\n    }\n    let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);\n      const ch = (e & f) ^ (~e & g);\n      const t1 = (h + S1 + ch + K256[i] + w[i]) >>> 0;\n      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const t2 = (S0 + maj) >>> 0;\n      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;\n    }\n    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;\n    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;\n  }\n  const out = new Uint8Array(32);\n  const odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\nfunction concatBytes(a, b) { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }\nfunction hmacSha256(key, msg) {\n  const B = 64;\n  const k = key.length > B ? sha256(key) : key;\n  const pad = new Uint8Array(B); pad.set(k);\n  const ipad = new Uint8Array(B), opad = new Uint8Array(B);\n  for (let i = 0; i < B; i++) { ipad[i] = pad[i] ^ 0x36; opad[i] = pad[i] ^ 0x5c; }\n  return sha256(concatBytes(opad, sha256(concatBytes(ipad, msg))));\n}\nfunction utf8(str) {\n  const out = [];\n  for (let i = 0; i < str.length; i++) {\n    let c = str.charCodeAt(i);\n    if (c < 0x80) out.push(c);\n    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));\n    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {\n      const c2 = str.charCodeAt(i + 1);\n      const cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);\n      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));\n      i++;\n    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));\n  }\n  return new Uint8Array(out);\n}\nfunction toHex(bytes) { let s = ''; for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0'); return s; }\nfunction equalConstTime(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\nfunction parseInitData(qs) {\n  const map = new Map();\n  for (const pair of qs.split('&')) {\n    if (!pair) continue;\n    const idx = pair.indexOf('=');\n    const rawKey = idx === -1 ? pair : pair.slice(0, idx);\n    const rawVal = idx === -1 ? '' : pair.slice(idx + 1);\n    map.set(\n      decodeURIComponent(rawKey.replace(/\\+/g, ' ')),\n      decodeURIComponent(rawVal.replace(/\\+/g, ' '))\n    );\n  }\n  return map;\n}\n\n// ============================================================\n//  Легка перевірка підпису — лише авторизація клієнта, без валідації слота.\n//  Використовується для \"Мої записи\" і скасування.\n// ============================================================\nconst TELEGRAM_BOT_TOKEN = $env.TELEGRAM_BOT_TOKEN;\nif (!TELEGRAM_BOT_TOKEN) throw new Error('Немає змінної TELEGRAM_BOT_TOKEN в оточенні n8n');\n\nconst body = $json.body || {};\nconst initData = body.initData || '';\nif (!initData) throw new Error('initData порожній — запит не з Telegram');\n\nconst params = parseInitData(initData);\nconst hash = params.get('hash') || '';\nparams.delete('hash');\nconst dataCheckString = Array.from(params.entries())\n  .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))\n  .map(([k, v]) => k + '=' + v)\n  .join('\\n');\n\nconst secret = hmacSha256(utf8('WebAppData'), utf8(TELEGRAM_BOT_TOKEN));\nconst calc = toHex(hmacSha256(secret, utf8(dataCheckString)));\nif (!equalConstTime(calc, hash)) throw new Error('Підпис не зійшовся — запит підроблено');\n\nconst authDate = Number(params.get('auth_date') || 0);\nif (Math.floor(Date.now() / 1000) - authDate > 86400) {\n  throw new Error('Підпис протермінований, перевідкрий застосунок');\n}\n\nconst user = JSON.parse(params.get('user') || '{}');\nif (!user.id) throw new Error('Немає user.id в initData');\n\nreturn [{\n  json: {\n    telegramId: user.id,\n    bookingId: body.bookingId || null\n  }\n}];\n"
+      },
+      "id": "47c2ecf0-29c9-48a3-b07d-5abc40928490",
+      "name": "Перевірка користувача (cancel)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "записи"
+        },
+        "options": {}
+      },
+      "id": "36bc982e-6068-488e-8509-c22c4ee5b577",
+      "name": "Читати записи (cancel)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -224,
+        624
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const info = $('Перевірка користувача (cancel)').first().json;\nconst bookings = $input.all().map(i => i.json);\n\nif (!info.bookingId) {\n  return [{ json: { ok: false, error: 'Не вказано запис' } }];\n}\n\nconst row = bookings.find(b => String(b.booking_id) === String(info.bookingId));\nif (!row) {\n  return [{ json: { ok: false, error: 'Запис не знайдено' } }];\n}\nif (String(row.client_telegram_id) !== String(info.telegramId)) {\n  return [{ json: { ok: false, error: 'Це не ваш запис' } }];\n}\nif (String(row.status) !== 'active') {\n  return [{ json: { ok: false, error: 'Запис уже скасовано' } }];\n}\n\nreturn [{ json: { ok: true, booking_id: row.booking_id, status: 'cancelled' } }];\n"
+      },
+      "id": "153d600e-c668-4f51-a6d6-d1f26655f6b4",
+      "name": "Перевірка скасування",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "68e843dc-2484-4695-86c0-40620632f952",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ec5054b3-29e1-495a-9907-0f5a0876138f",
+      "name": "Можна скасувати?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        272,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "записи"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "booking_id": "={{ $json.booking_id }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [
+            "booking_id"
+          ],
+          "schema": [
+            {
+              "id": "booking_id",
+              "displayName": "booking_id",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5d4cefd3-c8d6-46fe-baae-d760d7d20525",
+      "name": "Оновити статус",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        544
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true } }}",
+        "options": {}
+      },
+      "id": "e9e6b047-acf3-4840-a2fc-762b02397ca0",
+      "name": "Успіх (cancel)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        752,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error } }}",
+        "options": {}
+      },
+      "id": "a0c4550e-ce3e-4ed4-b6a8-2f06b0e041b6",
+      "name": "Помилка (cancel)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trainer-booking-schedule",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f49fd9ef-506f-4f2e-89c9-16c807fc0d11",
+      "name": "POST /trainer-booking-schedule",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        -400
+      ],
+      "webhookId": "69eed6e4-1dba-45d6-9e9a-8d1583cc1ed0"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "записи"
+        },
+        "options": {}
+      },
+      "id": "d07c1959-cbed-49a6-8e2a-7aba21468aaa",
+      "name": "Читати записи (schedule)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -464,
+        -400
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ЗАГЛУШКА — замінити реальним розкладом тренера.\nconst SLOTS = [\n  { club: \"c2\", weekday: 1, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 3, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 5, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 2, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 4, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 6, time: \"10:00\", capacity: 30 }\n];\nconst DAYS_AHEAD = 14;\n\nconst bookings = $input.all().map(i => i.json);\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\n\nfunction activeCount(club, weekday, time, date) {\n  return bookings.filter(b =>\n    String(b.club_id) === club &&\n    Number(b.weekday) === weekday &&\n    String(b.time) === time &&\n    String(b.session_date) === date &&\n    String(b.status) === 'active'\n  ).length;\n}\n\nconst now = new Date();\nconst sessions = [];\nfor (let d = 0; d < DAYS_AHEAD; d++) {\n  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);\n  const weekday = day.getDay();\n  for (const slot of SLOTS) {\n    if (slot.weekday !== weekday) continue;\n    const date = dateStr(day);\n    if (d === 0) {\n      const [hh, mm] = slot.time.split(':').map(Number);\n      const sessionTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);\n      if (sessionTime <= now) continue;\n    }\n    const taken = activeCount(slot.club, slot.weekday, slot.time, date);\n    sessions.push({\n      club: slot.club,\n      weekday: slot.weekday,\n      time: slot.time,\n      date,\n      capacity: slot.capacity,\n      free: Math.max(0, slot.capacity - taken)\n    });\n  }\n}\nsessions.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));\n\nreturn [{ json: { sessions } }];\n"
+      },
+      "id": "9461158c-93f5-4b2d-b086-82db831e8198",
+      "name": "Розклад",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "f1e69e80-5b9e-4cc7-a0a9-f0f13e405fe6",
+      "name": "Відповісти (schedule)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trainer-booking-admin",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "dacda971-887c-4ac9-a6da-bf804d8f232d",
+      "name": "POST /trainer-booking-admin",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        -608
+      ],
+      "webhookId": "df3efdf0-1afa-4a20-9559-379ceb70359e"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- SHA-256 і HMAC вручну (n8n забороняє require('crypto')) ----\nconst K256 = [\n  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2\n];\nfunction sha256(msg) {\n  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];\n  const bitLen = msg.length * 8;\n  const buf = new Uint8Array(((msg.length + 9 + 63) >> 6) << 6);\n  buf.set(msg); buf[msg.length] = 0x80;\n  const dv = new DataView(buf.buffer);\n  dv.setUint32(buf.length - 8, Math.floor(bitLen / 0x100000000));\n  dv.setUint32(buf.length - 4, bitLen >>> 0);\n  const w = new Uint32Array(64);\n  const rotr = (x, n) => (x >>> n) | (x << (32 - n));\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15] >>> 3);\n      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2] >>> 10);\n      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;\n    }\n    let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);\n      const ch = (e & f) ^ (~e & g);\n      const t1 = (h + S1 + ch + K256[i] + w[i]) >>> 0;\n      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const t2 = (S0 + maj) >>> 0;\n      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;\n    }\n    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;\n    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;\n  }\n  const out = new Uint8Array(32);\n  const odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\nfunction concatBytes(a, b) { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }\nfunction hmacSha256(key, msg) {\n  const B = 64;\n  const k = key.length > B ? sha256(key) : key;\n  const pad = new Uint8Array(B); pad.set(k);\n  const ipad = new Uint8Array(B), opad = new Uint8Array(B);\n  for (let i = 0; i < B; i++) { ipad[i] = pad[i] ^ 0x36; opad[i] = pad[i] ^ 0x5c; }\n  return sha256(concatBytes(opad, sha256(concatBytes(ipad, msg))));\n}\nfunction utf8(str) {\n  const out = [];\n  for (let i = 0; i < str.length; i++) {\n    let c = str.charCodeAt(i);\n    if (c < 0x80) out.push(c);\n    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));\n    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {\n      const c2 = str.charCodeAt(i + 1);\n      const cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);\n      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));\n      i++;\n    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));\n  }\n  return new Uint8Array(out);\n}\nfunction toHex(bytes) { let s = ''; for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0'); return s; }\nfunction equalConstTime(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\nfunction parseInitData(qs) {\n  const map = new Map();\n  for (const pair of qs.split('&')) {\n    if (!pair) continue;\n    const idx = pair.indexOf('=');\n    const rawKey = idx === -1 ? pair : pair.slice(0, idx);\n    const rawVal = idx === -1 ? '' : pair.slice(idx + 1);\n    map.set(\n      decodeURIComponent(rawKey.replace(/\\+/g, ' ')),\n      decodeURIComponent(rawVal.replace(/\\+/g, ' '))\n    );\n  }\n  return map;\n}\n\n// ============================================================\n//  Перевірка підпису + що це саме тренер (адмін-гейт по telegram_id).\n// ============================================================\nconst ADMIN_TELEGRAM_ID = '7656322828';\n\nconst TELEGRAM_BOT_TOKEN = $env.TELEGRAM_BOT_TOKEN;\nif (!TELEGRAM_BOT_TOKEN) throw new Error('Немає змінної TELEGRAM_BOT_TOKEN в оточенні n8n');\n\nconst body = $json.body || {};\nconst initData = body.initData || '';\nif (!initData) throw new Error('initData порожній — запит не з Telegram');\n\nconst params = parseInitData(initData);\nconst hash = params.get('hash') || '';\nparams.delete('hash');\nconst dataCheckString = Array.from(params.entries())\n  .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))\n  .map(([k, v]) => k + '=' + v)\n  .join('\\n');\n\nconst secret = hmacSha256(utf8('WebAppData'), utf8(TELEGRAM_BOT_TOKEN));\nconst calc = toHex(hmacSha256(secret, utf8(dataCheckString)));\nif (!equalConstTime(calc, hash)) throw new Error('Підпис не зійшовся — запит підроблено');\n\nconst authDate = Number(params.get('auth_date') || 0);\nif (Math.floor(Date.now() / 1000) - authDate > 86400) {\n  throw new Error('Підпис протермінований, перевідкрий застосунок');\n}\n\nconst user = JSON.parse(params.get('user') || '{}');\nif (!user.id) throw new Error('Немає user.id в initData');\n\nif (String(user.id) !== ADMIN_TELEGRAM_ID) {\n  throw new Error('Немає доступу');\n}\n\nreturn [{ json: { telegramId: user.id } }];\n"
+      },
+      "id": "89d4a14e-dbfa-433f-b20f-797d134a117e",
+      "name": "Перевірка адміна",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        -608
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "записи"
+        },
+        "options": {}
+      },
+      "id": "3a3ef969-5aab-4eea-a24a-bbdd54e6a0f5",
+      "name": "Читати записи (admin)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -224,
+        -608
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ЗАГЛУШКА — той самий розклад, що і в schedule.js / verify_signature.js.\nconst SLOTS = [\n  { club: \"c2\", weekday: 1, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 3, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 5, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 2, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 4, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 6, time: \"10:00\", capacity: 30 }\n];\nconst CLUBS = {\n  c2: \"CrossGYM — 95 квартал\",\n  c3: \"CrossGYM — Вечірній\"\n};\nconst DAYS_AHEAD = 14;\n\nconst bookings = $input.all().map(i => i.json);\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\n\nconst now = new Date();\nconst sessions = [];\nfor (let d = 0; d < DAYS_AHEAD; d++) {\n  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);\n  const weekday = day.getDay();\n  for (const slot of SLOTS) {\n    if (slot.weekday !== weekday) continue;\n    const date = dateStr(day);\n    if (d === 0) {\n      const [hh, mm] = slot.time.split(':').map(Number);\n      const sessionTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);\n      if (sessionTime <= now) continue;\n    }\n    const roster = bookings.filter(b =>\n      String(b.club_id) === slot.club &&\n      Number(b.weekday) === slot.weekday &&\n      String(b.time) === slot.time &&\n      String(b.session_date) === date &&\n      String(b.status) === 'active'\n    ).map(b => b.client_name || ('id ' + b.client_telegram_id));\n\n    sessions.push({\n      club: slot.club,\n      clubName: CLUBS[slot.club] || slot.club,\n      weekday: slot.weekday,\n      time: slot.time,\n      date,\n      capacity: slot.capacity,\n      roster\n    });\n  }\n}\nsessions.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));\n\nreturn [{ json: { sessions } }];\n"
+      },
+      "id": "7b053926-70e9-40d3-8297-7c31392bf88a",
+      "name": "Список для адміна",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -608
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "ed8c4adb-40e6-4741-8208-7b9096f8f482",
+      "name": "Відповісти (admin)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        -608
+      ]
+    }
+  ],
+  "connections": {
+    "GET /trainer-booking": {
+      "main": [
+        [
+          {
+            "node": "Дані клубів і HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Дані клубів і HTML": {
+      "main": [
+        [
+          {
+            "node": "Віддати сторінку",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /trainer-booking-book": {
+      "main": [
+        [
+          {
+            "node": "Перевірка підпису",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевірка підпису": {
+      "main": [
+        [
+          {
+            "node": "Читати записи (POST)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати записи (POST)": {
+      "main": [
+        [
+          {
+            "node": "Перевірка ліміту",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевірка ліміту": {
+      "main": [
+        [
+          {
+            "node": "Чи є місце?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Чи є місце?": {
+      "main": [
+        [
+          {
+            "node": "Записати",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Місць немає",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Записати": {
+      "main": [
+        [
+          {
+            "node": "Успіх",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /trainer-booking-mine": {
+      "main": [
+        [
+          {
+            "node": "Перевірка користувача (mine)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевірка користувача (mine)": {
+      "main": [
+        [
+          {
+            "node": "Читати записи (mine)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати записи (mine)": {
+      "main": [
+        [
+          {
+            "node": "Мої записи",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Мої записи": {
+      "main": [
+        [
+          {
+            "node": "Відповісти (mine)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /trainer-booking-cancel": {
+      "main": [
+        [
+          {
+            "node": "Перевірка користувача (cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевірка користувача (cancel)": {
+      "main": [
+        [
+          {
+            "node": "Читати записи (cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати записи (cancel)": {
+      "main": [
+        [
+          {
+            "node": "Перевірка скасування",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевірка скасування": {
+      "main": [
+        [
+          {
+            "node": "Можна скасувати?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Можна скасувати?": {
+      "main": [
+        [
+          {
+            "node": "Оновити статус",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Помилка (cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Оновити статус": {
+      "main": [
+        [
+          {
+            "node": "Успіх (cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /trainer-booking-schedule": {
+      "main": [
+        [
+          {
+            "node": "Читати записи (schedule)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати записи (schedule)": {
+      "main": [
+        [
+          {
+            "node": "Розклад",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Розклад": {
+      "main": [
+        [
+          {
+            "node": "Відповісти (schedule)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /trainer-booking-admin": {
+      "main": [
+        [
+          {
+            "node": "Перевірка адміна",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевірка адміна": {
+      "main": [
+        [
+          {
+            "node": "Читати записи (admin)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати записи (admin)": {
+      "main": [
+        [
+          {
+            "node": "Список для адміна",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Список для адміна": {
+      "main": [
+        [
+          {
+            "node": "Відповісти (admin)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "stripped"
+  }
+}
