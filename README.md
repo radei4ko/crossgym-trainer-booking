@@ -1,5 +1,7 @@
 # CrossGYM Trainer Booking — Telegram Mini App
 
+[![CI](https://github.com/radei4ko/crossgym-trainer-booking/actions/workflows/ci.yml/badge.svg)](https://github.com/radei4ko/crossgym-trainer-booking/actions/workflows/ci.yml)
+
 Live booking system for a CrossFit trainer's group sessions across two clubs in Kryvyi Rih.
 Members book inside Telegram; the trainer manages the schedule from an admin view in the
 same app. In daily use since August 2026.
