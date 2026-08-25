@@ -4,6 +4,14 @@ Telegram Mini App for booking group CrossFit sessions at CrossGYM clubs (Kryvyi 
 Vanilla JS/CSS frontend, no build step — talks to an n8n webhook backend for booking,
 schedule, and cancellation.
 
+## Screenshots
+
+<p>
+  <img src="site/screenshots/home.png" width="260" alt="Home screen">
+  <img src="site/screenshots/schedule.png" width="260" alt="Club schedule">
+  <img src="site/screenshots/booking.png" width="260" alt="Booking confirmation">
+</p>
+
 ## Features
 
 - Browse clubs, see live open/closed status based on working hours
