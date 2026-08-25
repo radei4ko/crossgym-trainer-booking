@@ -69,7 +69,7 @@ before it touched a real booking.
 
 ## Stack
 
-Static HTML/CSS/JS · Telegram Web App SDK · n8n· Google Sheets
+Static HTML/CSS/JS · Telegram Web App SDK · n8n · Google Sheets
 
 ## Structure
 
