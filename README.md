@@ -10,6 +10,29 @@ same app. In daily use since August 2026.
   <img src="site/screenshots/booking.png" width="30%" />
 </p>
 
+### Screens
+
+UI is in Ukrainian — the trainer's clients are Ukrainian-speaking.
+
+**1 · Trainer profile and club picker**
+Coach profile with certifications and an Instagram link, then the two club
+locations. The coloured dot next to each club is live open/closed status,
+computed from that location's working hours — green for open, red for closed.
+"Мої записи" ("My bookings") is always one tap away.
+
+**2 · Club schedule**
+Open status with closing time, plus direct call and Instagram actions. The date
+strip marks which days actually have sessions, so empty days are visible before
+tapping. Each session shows time, class name, coach and remaining capacity
+("30 вільно" — 30 spots left).
+
+**3 · Booking confirmation**
+Club, date, time, price and live capacity (30 of 30 available) before the user
+commits. Class formats are listed for the session. The name field is prefilled
+from the Telegram account, so booking takes one tap. The cancellation policy is
+shown inline rather than buried — cancelling is possible any time from
+"My bookings".
+
 ## Features
 
 - Browse clubs with live open/closed status from each location's working hours
