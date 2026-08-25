@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check JS syntax
+        run: node --check site/app.js
+
+      - name: Validate n8n workflow export JSON
+        run: python3 -c "import json; json.load(open('workflows/trainer-booking.json'))"
+
+      - name: Fail if a real API key or secret leaked into the workflow export
+        run: |
+          if grep -oE '"(value|apiKey|token)"\s*:\s*"[A-Za-z0-9_-]{20,}"' workflows/trainer-booking.json | grep -qv "YOUR_"; then
+            echo "Looks like a real secret is embedded in the workflow export."
+            exit 1
+          fi
