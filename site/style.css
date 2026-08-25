@@ -1,0 +1,235 @@
+:root {
+  --bg:      #0c0c11;
+  --card:    #17171f;
+  --card2:   #1d1d26;
+  --text:    #ffffff;
+  --muted:   #9b9ba7;
+  --accent:  #4361ee;
+  --accent2: #7209b7;
+  --onaccent:#ffffff;
+  --sep:     rgba(255,255,255,.08);
+  --header:  #75757f;
+  --success: #2bb673;
+  --danger:  #ef4444;
+  --radius: 16px;
+  --shadow: 0 1px 2px rgba(0,0,0,.25), 0 10px 28px -12px rgba(0,0,0,.55);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  margin: 0; padding: 0 0 calc(32px + env(safe-area-inset-bottom));
+  min-height: 100vh; min-height: var(--tg-vh, 100vh);
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg); color: var(--text); font-size: 16px; line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  background-image: radial-gradient(480px 300px at 100% 0%, rgba(114,9,183,.16), transparent 65%),
+                     radial-gradient(420px 260px at 0% 15%, rgba(67,97,238,.12), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* ---------- візитка тренера ---------- */
+.hero {
+  margin: 18px 16px 4px; padding: 20px 18px; border-radius: 20px;
+  background: linear-gradient(150deg, #191a21, #232030 55%, #2c2036);
+  color: #fff; box-shadow: var(--shadow); position: relative; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.06);
+}
+.hero::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120px 120px at 88% -10%, rgba(114,9,183,.5), transparent 70%);
+}
+.hero-top { display: flex; align-items: center; gap: 14px; position: relative; }
+.hero-photo {
+  width: 62px; height: 62px; border-radius: 16px; object-fit: cover; flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
+.hero-name { font-size: 18px; font-weight: 800; line-height: 1.2; }
+.hero-role { font-size: 13px; color: rgba(255,255,255,.65); margin-top: 2px; }
+.hero-bio {
+  font-size: 13px; color: rgba(255,255,255,.8); line-height: 1.5;
+  margin-top: 14px; position: relative;
+}
+.hero-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; position: relative; }
+.hero-badge {
+  font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  padding: 5px 9px; border-radius: 7px; background: rgba(255,255,255,.1); color: rgba(255,255,255,.85);
+}
+.hero-ig {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; position: relative;
+  font-size: 13px; font-weight: 700; color: #fff; text-decoration: none;
+  padding: 8px 12px; border-radius: 10px;
+  background: linear-gradient(135deg,#f9ce34,#ee2a7b,#6228d7);
+}
+.hero-ig:active { opacity: .8; }
+
+/* ---------- сторінка залу (нейтральний topbar, акцент лише на функції) ---------- */
+.ctopbar {
+  display: flex; align-items: center; gap: 12px; padding: 16px 16px 14px;
+}
+.backsq {
+  width: 36px; height: 36px; border-radius: 11px; background: var(--card);
+  border: 1px solid rgba(255,255,255,.08); color: var(--text);
+  display: flex; align-items: center; justify-content: center; flex: 0 0 auto; cursor: pointer;
+  transition: transform .12s ease;
+}
+.backsq:active { transform: scale(.92); }
+.cname { font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+.caddr { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.caddr a { color: var(--club-accent, var(--accent)); text-decoration: none; font-weight: 600; }
+
+.cardbox {
+  margin: 4px 16px 0; padding: 14px 16px; border-radius: var(--radius);
+  background: var(--card); box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.05);
+}
+.status { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600; }
+.status i { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex: 0 0 auto; }
+.status i.off { background: var(--muted); }
+.acts { display: flex; gap: 8px; margin-top: 12px; }
+.act {
+  flex: 1; padding: 10px 4px; border-radius: 10px; background: rgba(255,255,255,.05);
+  font-size: 12.5px; font-weight: 600; text-align: center; color: var(--text);
+  text-decoration: none; transition: background-color .15s ease, transform .1s ease;
+}
+.act:active { background: rgba(255,255,255,.1); transform: scale(.96); }
+
+.dates { display: flex; gap: 8px; padding: 0 16px 4px; overflow-x: auto; scrollbar-width: none;
+  scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.dates::-webkit-scrollbar { display: none; }
+.dates.diary { padding-left: 16px; padding-right: 16px; }
+.day {
+  width: 50px; flex: 0 0 auto; padding: 9px 0 10px; border-radius: 12px; background: var(--card);
+  text-align: center; border: 1px solid rgba(255,255,255,.05); cursor: pointer; scroll-snap-align: center;
+  transition: background-color .15s ease, transform .1s ease;
+}
+.day:active { transform: scale(.95); }
+.day.on { background: var(--club-accent, var(--accent)); border-color: transparent;
+  box-shadow: 0 4px 14px -4px var(--club-accent, var(--accent)); }
+.day .dw { font-size: 10.5px; color: var(--muted); text-transform: uppercase; font-weight: 600; }
+.day.on .dw { color: rgba(255,255,255,.85); }
+.day .dd { font-size: 17px; font-weight: 700; margin: 2px 0; color: var(--text); }
+.day.on .dd { color: #fff; }
+.day.empty:not(.on) { opacity: .4; }
+.day.empty:not(.on) .dd { color: var(--muted); }
+.day.today:not(.on) { border-color: var(--club-accent, var(--accent)); }
+.daydot { height: 6px; display: flex; align-items: center; justify-content: center; }
+.daydot i { width: 5px; height: 5px; border-radius: 50%; background: var(--club-accent, var(--accent)); }
+.day.on .daydot i { background: #fff; }
+
+.lead {
+  width: 54px; flex: 0 0 auto; font-size: 15.5px; font-weight: 700;
+  color: var(--club-accent, var(--accent)); font-variant-numeric: tabular-nums;
+}
+.trail b { display: block; font-size: 16px; color: var(--text); }
+
+.nameinput {
+  width: 100%; background: none; border: 0; outline: none; color: var(--text);
+  font-family: inherit; font-size: 16px; padding: 4px 2px;
+}
+.nameinput::placeholder { color: var(--muted); }
+
+/* ---------- екран: плавна поява ---------- */
+.screen { animation: screenIn .32s cubic-bezier(.22,1,.36,1) both; }
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- заголовки секцій ---------- */
+.shead {
+  font-size: 12.5px; font-weight: 700; letter-spacing: .06em;
+  color: var(--header); text-transform: uppercase;
+  padding: 22px 20px 8px;
+}
+.shead:first-child { padding-top: 18px; }
+
+/* ---------- згрупований список ---------- */
+.group {
+  background: var(--card); border-radius: var(--radius); margin: 0 16px;
+  overflow: hidden; box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.05);
+}
+.row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 13px 18px; min-height: 50px; background: none; border: 0; cursor: pointer;
+  position: relative; color: inherit; font: inherit;
+  transition: background-color .15s ease, transform .08s ease;
+}
+.row + .row::before {
+  content: ''; position: absolute; left: 18px; right: 0; top: 0;
+  height: 1px; transform: scaleY(.5); background: var(--sep);
+}
+.row:not([disabled]):not(.static):active { background: rgba(255,255,255,.06); transform: scale(.99); }
+.row[disabled] { opacity: .38; cursor: default; }
+.row.static { cursor: default; }
+
+.dot {
+  width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot-color, currentColor) 22%, transparent);
+}
+.grow { flex: 1; min-width: 0; }
+.title { font-size: 16px; font-weight: 600; }
+.sub { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
+.chev {
+  color: var(--muted); flex-shrink: 0; opacity: .7;
+  transition: transform .15s ease;
+}
+.row:active .chev { transform: translateX(2px); }
+
+/* ---------- кнопки ---------- */
+.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--onaccent); border: 0; border-radius: var(--radius);
+  width: calc(100% - 32px); margin: 22px 16px; padding: 16px;
+  font-family: inherit; font-size: 16.5px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 10px 28px -10px rgba(67,97,238,.55);
+  transition: transform .12s ease, box-shadow .12s ease, opacity .2s ease;
+}
+.primary:not([disabled]):active { transform: scale(.98); }
+.primary[disabled] { opacity: .55; cursor: default; box-shadow: none; }
+
+.backbtn {
+  display: flex; align-items: center; gap: 4px; background: none; border: 0;
+  color: #a78bfa; font: inherit; font-weight: 600; font-size: 15px;
+  padding: 18px 16px 0; cursor: pointer; transition: opacity .15s ease;
+}
+.backbtn:active { opacity: .5; }
+.backbtn .chev, .backbtn .back-icon { transform: rotate(180deg); opacity: 1; }
+
+.cancelbtn {
+  background: none; border: 1.5px solid var(--danger); color: var(--danger);
+  border-radius: 9px; padding: 7px 14px; font: inherit; font-weight: 600; font-size: 13.5px;
+  cursor: pointer; white-space: nowrap; transition: transform .12s ease, background-color .15s ease;
+}
+.cancelbtn:not([disabled]):active { transform: scale(.95); background: rgba(239,68,68,.12); }
+.cancelbtn[disabled] { opacity: .5; }
+
+/* ---------- статус-повідомлення ---------- */
+.statusmsg {
+  padding: 10px 16px 0; font-size: 14px; font-weight: 600; text-align: center;
+  color: var(--muted); min-height: 22px; transition: color .2s ease;
+}
+.statusmsg.ok { color: var(--success); animation: pop .35s cubic-bezier(.34,1.56,.64,1) both; }
+.statusmsg.error { color: var(--danger); animation: shake .3s ease both; }
+@keyframes pop { 0% { transform: scale(.7); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* ---------- скелетон завантаження ---------- */
+.skeleton-row { padding: 13px 18px; }
+.skeleton-line {
+  height: 14px; border-radius: 6px; margin-bottom: 8px;
+  background: linear-gradient(90deg, rgba(255,255,255,.05) 25%, rgba(255,255,255,.12) 37%, rgba(255,255,255,.05) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+.skeleton-line.short { width: 45%; height: 11px; margin-bottom: 0; }
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ---------- інше ---------- */
+.trail { text-align: right; white-space: nowrap; font-size: 14px; color: var(--muted); font-weight: 600; }
