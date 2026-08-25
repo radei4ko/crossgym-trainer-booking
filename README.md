@@ -2,7 +2,7 @@
 
 Live booking system for a CrossFit trainer's group sessions across two clubs in Kryvyi Rih.
 Members book inside Telegram; the trainer manages the schedule from an admin view in the
-same app. In daily use since September 2026.
+same app. In daily use since August 2026.
 
 <p align="center">
   <img src="site/screenshots/home.png" width="30%" />
