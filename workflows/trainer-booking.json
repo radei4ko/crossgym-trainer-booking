@@ -77,7 +77,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ---- SHA-256 і HMAC вручну (n8n забороняє require('crypto')) ----\n// Реалізація перенесена з crossgym-miniapp, звірена з еталоном node:crypto на 375 тестах.\nconst K256 = [\n  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2\n];\nfunction sha256(msg) {\n  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];\n  const bitLen = msg.length * 8;\n  const buf = new Uint8Array(((msg.length + 9 + 63) >> 6) << 6);\n  buf.set(msg); buf[msg.length] = 0x80;\n  const dv = new DataView(buf.buffer);\n  dv.setUint32(buf.length - 8, Math.floor(bitLen / 0x100000000));\n  dv.setUint32(buf.length - 4, bitLen >>> 0);\n  const w = new Uint32Array(64);\n  const rotr = (x, n) => (x >>> n) | (x << (32 - n));\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15] >>> 3);\n      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2] >>> 10);\n      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;\n    }\n    let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);\n      const ch = (e & f) ^ (~e & g);\n      const t1 = (h + S1 + ch + K256[i] + w[i]) >>> 0;\n      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const t2 = (S0 + maj) >>> 0;\n      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;\n    }\n    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;\n    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;\n  }\n  const out = new Uint8Array(32);\n  const odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\nfunction concatBytes(a, b) { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }\nfunction hmacSha256(key, msg) {\n  const B = 64;\n  const k = key.length > B ? sha256(key) : key;\n  const pad = new Uint8Array(B); pad.set(k);\n  const ipad = new Uint8Array(B), opad = new Uint8Array(B);\n  for (let i = 0; i < B; i++) { ipad[i] = pad[i] ^ 0x36; opad[i] = pad[i] ^ 0x5c; }\n  return sha256(concatBytes(opad, sha256(concatBytes(ipad, msg))));\n}\nfunction utf8(str) {\n  const out = [];\n  for (let i = 0; i < str.length; i++) {\n    let c = str.charCodeAt(i);\n    if (c < 0x80) out.push(c);\n    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));\n    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {\n      const c2 = str.charCodeAt(i + 1);\n      const cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);\n      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));\n      i++;\n    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));\n  }\n  return new Uint8Array(out);\n}\nfunction toHex(bytes) { let s = ''; for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0'); return s; }\nfunction equalConstTime(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\n\n// ============================================================\n//  Перевірка підпису Telegram + валідація слота проти серверних даних.\n//  Ліміт місць і сам факт існування слота беремо ЗІ СВОЄЇ таблиці,\n//  а не з тіла запиту — клієнтський JS можна підмінити.\n// ============================================================\nconst SLOTS = [\n  { club: \"c2\", weekday: 1, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 3, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 5, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 2, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 4, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 6, time: \"10:00\", capacity: 30 }\n];\n\nconst TELEGRAM_BOT_TOKEN = $env.TELEGRAM_BOT_TOKEN;\nif (!TELEGRAM_BOT_TOKEN) throw new Error('Немає змінної TELEGRAM_BOT_TOKEN в оточенні n8n');\n\nconst body = $json.body || {};\nconst initData = body.initData || '';\nif (!initData) throw new Error('initData порожній — запит не з Telegram');\n\n// URLSearchParams недоступний у пісочниці n8n — парсимо вручну.\n// '+' як пробіл — так само як робить URLSearchParams (form-urlencoded).\nfunction parseInitData(qs) {\n  const map = new Map();\n  for (const pair of qs.split('&')) {\n    if (!pair) continue;\n    const idx = pair.indexOf('=');\n    const rawKey = idx === -1 ? pair : pair.slice(0, idx);\n    const rawVal = idx === -1 ? '' : pair.slice(idx + 1);\n    map.set(\n      decodeURIComponent(rawKey.replace(/\\+/g, ' ')),\n      decodeURIComponent(rawVal.replace(/\\+/g, ' '))\n    );\n  }\n  return map;\n}\n\nconst params = parseInitData(initData);\nconst hash = params.get('hash') || '';\nparams.delete('hash');\nconst dataCheckString = Array.from(params.entries())\n  .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))\n  .map(([k, v]) => k + '=' + v)\n  .join('\\n');\n\nconst secret = hmacSha256(utf8('WebAppData'), utf8(TELEGRAM_BOT_TOKEN));\nconst calc = toHex(hmacSha256(secret, utf8(dataCheckString)));\nif (!equalConstTime(calc, hash)) throw new Error('Підпис не зійшовся — запит підроблено');\n\nconst authDate = Number(params.get('auth_date') || 0);\nif (Math.floor(Date.now() / 1000) - authDate > 86400) {\n  throw new Error('Підпис протермінований, перевідкрий застосунок');\n}\n\nconst user = JSON.parse(params.get('user') || '{}');\nif (!user.id) throw new Error('Немає user.id в initData');\n\n// ---- звіряємо слот із серверним списком, а не довіряємо тілу запиту ----\nconst club = String(body.club || '');\nconst weekday = Number(body.weekday);\nconst time = String(body.time || '');\nconst date = String(body.date || '');\n\nconst slot = SLOTS.find(s => s.club === club && s.weekday === weekday && s.time === time);\nif (!slot) throw new Error('Такого слота не існує');\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) throw new Error('Некоректна дата');\n\n// дата має відповідати дню тижня слота\nconst [y, m, d] = date.split('-').map(Number);\nconst checkDate = new Date(y, m - 1, d);\nif (checkDate.getDay() !== weekday) throw new Error('Дата не відповідає дню тижня слота');\n\nconst enteredName = String(body.clientName || '').trim().slice(0, 100);\nconst telegramName = [user.first_name, user.last_name].filter(Boolean).join(' ');\nconst clientName = enteredName || telegramName;\n\nreturn [{\n  json: {\n    telegramId: user.id,\n    clientName,\n    username: user.username || null,\n    club,\n    weekday,\n    time,\n    date,\n    capacity: slot.capacity\n  }\n}];\n"
+        "jsCode": "// ---- SHA-256 і HMAC вручну (n8n забороняє require('crypto')) ----\n// Реалізація перенесена з crossgym-miniapp, звірена з еталоном node:crypto на 375 тестах.\nconst K256 = [\n  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2\n];\nfunction sha256(msg) {\n  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];\n  const bitLen = msg.length * 8;\n  const buf = new Uint8Array(((msg.length + 9 + 63) >> 6) << 6);\n  buf.set(msg); buf[msg.length] = 0x80;\n  const dv = new DataView(buf.buffer);\n  dv.setUint32(buf.length - 8, Math.floor(bitLen / 0x100000000));\n  dv.setUint32(buf.length - 4, bitLen >>> 0);\n  const w = new Uint32Array(64);\n  const rotr = (x, n) => (x >>> n) | (x << (32 - n));\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15] >>> 3);\n      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2] >>> 10);\n      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;\n    }\n    let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);\n      const ch = (e & f) ^ (~e & g);\n      const t1 = (h + S1 + ch + K256[i] + w[i]) >>> 0;\n      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const t2 = (S0 + maj) >>> 0;\n      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;\n    }\n    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;\n    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;\n  }\n  const out = new Uint8Array(32);\n  const odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\nfunction concatBytes(a, b) { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }\nfunction hmacSha256(key, msg) {\n  const B = 64;\n  const k = key.length > B ? sha256(key) : key;\n  const pad = new Uint8Array(B); pad.set(k);\n  const ipad = new Uint8Array(B), opad = new Uint8Array(B);\n  for (let i = 0; i < B; i++) { ipad[i] = pad[i] ^ 0x36; opad[i] = pad[i] ^ 0x5c; }\n  return sha256(concatBytes(opad, sha256(concatBytes(ipad, msg))));\n}\nfunction utf8(str) {\n  const out = [];\n  for (let i = 0; i < str.length; i++) {\n    let c = str.charCodeAt(i);\n    if (c < 0x80) out.push(c);\n    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));\n    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {\n      const c2 = str.charCodeAt(i + 1);\n      const cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);\n      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));\n      i++;\n    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));\n  }\n  return new Uint8Array(out);\n}\nfunction toHex(bytes) { let s = ''; for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0'); return s; }\nfunction equalConstTime(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\n\n// ============================================================\n//  Перевірка підпису Telegram + валідація слота проти серверних даних.\n//  Розклад/ліміт місць тепер беремоз листа sessions (єдине джерело правди з\n//  Ops Core і booking), а не з тіла запиту — клієнтський JS можна підмінити.\n//  Примітка: первинним входом цього вузла тепер є рядки листа sessions (вставлений\n//  перед цим вузлом), тому body беремо явно з вебхука, а не з $json.\n// ============================================================\nconst sessionRows = $input.all().map(i => i.json);\nconst SLOTS = sessionRows\n  .filter(r => String(r.active).trim().toUpperCase() === 'TRUE')\n  .map(r => ({ club: String(r.club_id), weekday: Number(r.weekday), time: String(r.time), capacity: Number(r.capacity) }));\n\nif (!SLOTS.length) {\n  throw new Error('Розклад тимчасово недоступний, спробуйте ще раз за хвилину');\n}\n\nconst TELEGRAM_BOT_TOKEN = $env.TELEGRAM_BOT_TOKEN;\nif (!TELEGRAM_BOT_TOKEN) throw new Error('Немає змінної TELEGRAM_BOT_TOKEN в оточенні n8n');\n\nconst body = $('POST /trainer-booking-book').item.json.body || {};\nconst initData = body.initData || '';\nif (!initData) throw new Error('initData порожній — запит не з Telegram');\n\n// URLSearchParams недоступний у пісочниці n8n — парсимо вручну.\n// '+' як пробіл — так само як робить URLSearchParams (form-urlencoded).\nfunction parseInitData(qs) {\n  const map = new Map();\n  for (const pair of qs.split('&')) {\n    if (!pair) continue;\n    const idx = pair.indexOf('=');\n    const rawKey = idx === -1 ? pair : pair.slice(0, idx);\n    const rawVal = idx === -1 ? '' : pair.slice(idx + 1);\n    map.set(\n      decodeURIComponent(rawKey.replace(/\\+/g, ' ')),\n      decodeURIComponent(rawVal.replace(/\\+/g, ' '))\n    );\n  }\n  return map;\n}\n\nconst params = parseInitData(initData);\nconst hash = params.get('hash') || '';\nparams.delete('hash');\nconst dataCheckString = Array.from(params.entries())\n  .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))\n  .map(([k, v]) => k + '=' + v)\n  .join('\\n');\n\nconst secret = hmacSha256(utf8('WebAppData'), utf8(TELEGRAM_BOT_TOKEN));\nconst calc = toHex(hmacSha256(secret, utf8(dataCheckString)));\nif (!equalConstTime(calc, hash)) throw new Error('Підпис не зійшовся — запит підроблено');\n\nconst authDate = Number(params.get('auth_date') || 0);\nif (Math.floor(Date.now() / 1000) - authDate > 86400) {\n  throw new Error('Підпис протермінований, перевідкрий застосунок');\n}\n\nconst user = JSON.parse(params.get('user') || '{}');\nif (!user.id) throw new Error('Немає user.id в initData');\n\n// ---- звіряємо слот із серверним списком (з sessions), а не довіряємо тілу запиту ----\nconst club = String(body.club || '');\nconst weekday = Number(body.weekday);\nconst time = String(body.time || '');\nconst date = String(body.date || '');\n\nconst slot = SLOTS.find(s => s.club === club && s.weekday === weekday && s.time === time);\nif (!slot) throw new Error('Такого слота не існує');\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) throw new Error('Некоректна дата');\n\n// дата має відповідати дню тижня слота\nconst [y, m, d] = date.split('-').map(Number);\nconst checkDate = new Date(y, m - 1, d);\nif (checkDate.getDay() !== weekday) throw new Error('Дата не відповідає дню тижня слота');\n\nconst enteredName = String(body.clientName || '').trim().slice(0, 100);\nconst telegramName = [user.first_name, user.last_name].filter(Boolean).join(' ');\nconst clientName = enteredName || telegramName;\n\nreturn [{\n  json: {\n    telegramId: user.id,\n    clientName,\n    username: user.username || null,\n    club,\n    weekday,\n    time,\n    date,\n    capacity: slot.capacity\n  }\n}];\n"
       },
       "id": "188265ca-ca8d-4810-8e6c-f385eb8f04f1",
       "name": "Перевірка підпису",
@@ -248,12 +248,6 @@
               "displayName": "created_at",
               "type": "string",
               "removed": false
-            },
-            {
-              "id": "ok",
-              "displayName": "ok",
-              "type": "string",
-              "removed": true
             }
           ]
         },
@@ -516,7 +510,8 @@
           "mappingMode": "defineBelow",
           "value": {
             "booking_id": "={{ $json.booking_id }}",
-            "status": "={{ $json.status }}"
+            "status": "={{ $json.status }}",
+            "cancelled_at": "={{ $now.toISO() }}"
           },
           "matchingColumns": [
             "booking_id"
@@ -531,6 +526,12 @@
             {
               "id": "status",
               "displayName": "status",
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "cancelled_at",
+              "displayName": "cancelled_at",
               "type": "string",
               "removed": false
             }
@@ -632,7 +633,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ЗАГЛУШКА — замінити реальним розкладом тренера.\nconst SLOTS = [\n  { club: \"c2\", weekday: 1, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 3, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 5, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 2, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 4, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 6, time: \"10:00\", capacity: 30 }\n];\nconst DAYS_AHEAD = 14;\n\nconst bookings = $input.all().map(i => i.json);\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\n\nfunction activeCount(club, weekday, time, date) {\n  return bookings.filter(b =>\n    String(b.club_id) === club &&\n    Number(b.weekday) === weekday &&\n    String(b.time) === time &&\n    String(b.session_date) === date &&\n    String(b.status) === 'active'\n  ).length;\n}\n\nconst now = new Date();\nconst sessions = [];\nfor (let d = 0; d < DAYS_AHEAD; d++) {\n  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);\n  const weekday = day.getDay();\n  for (const slot of SLOTS) {\n    if (slot.weekday !== weekday) continue;\n    const date = dateStr(day);\n    if (d === 0) {\n      const [hh, mm] = slot.time.split(':').map(Number);\n      const sessionTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);\n      if (sessionTime <= now) continue;\n    }\n    const taken = activeCount(slot.club, slot.weekday, slot.time, date);\n    sessions.push({\n      club: slot.club,\n      weekday: slot.weekday,\n      time: slot.time,\n      date,\n      capacity: slot.capacity,\n      free: Math.max(0, slot.capacity - taken)\n    });\n  }\n}\nsessions.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));\n\nreturn [{ json: { sessions } }];\n"
+        "jsCode": "// Розклад тепер береться з листа sessions (єдине джерело правди з Ops Core).\n// $input тут — бронювання (з “Читати записи (schedule)”), не чіпаємо.\nconst SLOTS = $('Читати sessions (schedule)').all().map(i => i.json)\n  .filter(r => String(r.active).trim().toUpperCase() === 'TRUE')\n  .map(r => ({ club: String(r.club_id), weekday: Number(r.weekday), time: String(r.time), capacity: Number(r.capacity) }));\n\nconst DAYS_AHEAD = 14;\n\nconst bookings = $input.all().map(i => i.json);\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\n\nfunction activeCount(club, weekday, time, date) {\n  return bookings.filter(b =>\n    String(b.club_id) === club &&\n    Number(b.weekday) === weekday &&\n    String(b.time) === time &&\n    String(b.session_date) === date &&\n    String(b.status) === 'active'\n  ).length;\n}\n\nconst now = new Date();\nconst sessions = [];\nfor (let d = 0; d < DAYS_AHEAD; d++) {\n  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);\n  const weekday = day.getDay();\n  for (const slot of SLOTS) {\n    if (slot.weekday !== weekday) continue;\n    const date = dateStr(day);\n    if (d === 0) {\n      const [hh, mm] = slot.time.split(':').map(Number);\n      const sessionTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);\n      if (sessionTime <= now) continue;\n    }\n    const taken = activeCount(slot.club, slot.weekday, slot.time, date);\n    sessions.push({\n      club: slot.club,\n      weekday: slot.weekday,\n      time: slot.time,\n      date,\n      capacity: slot.capacity,\n      free: Math.max(0, slot.capacity - taken)\n    });\n  }\n}\nsessions.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));\n\nreturn [{ json: { sessions } }];\n"
       },
       "id": "9461158c-93f5-4b2d-b086-82db831e8198",
       "name": "Розклад",
@@ -720,7 +721,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ЗАГЛУШКА — той самий розклад, що і в schedule.js / verify_signature.js.\nconst SLOTS = [\n  { club: \"c2\", weekday: 1, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 3, time: \"18:00\", capacity: 30 },\n  { club: \"c2\", weekday: 5, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 2, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 4, time: \"18:00\", capacity: 30 },\n  { club: \"c3\", weekday: 6, time: \"10:00\", capacity: 30 }\n];\nconst CLUBS = {\n  c2: \"CrossGYM — 95 квартал\",\n  c3: \"CrossGYM — Вечірній\"\n};\nconst DAYS_AHEAD = 14;\n\nconst bookings = $input.all().map(i => i.json);\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\n\nconst now = new Date();\nconst sessions = [];\nfor (let d = 0; d < DAYS_AHEAD; d++) {\n  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);\n  const weekday = day.getDay();\n  for (const slot of SLOTS) {\n    if (slot.weekday !== weekday) continue;\n    const date = dateStr(day);\n    if (d === 0) {\n      const [hh, mm] = slot.time.split(':').map(Number);\n      const sessionTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);\n      if (sessionTime <= now) continue;\n    }\n    const roster = bookings.filter(b =>\n      String(b.club_id) === slot.club &&\n      Number(b.weekday) === slot.weekday &&\n      String(b.time) === slot.time &&\n      String(b.session_date) === date &&\n      String(b.status) === 'active'\n    ).map(b => b.client_name || ('id ' + b.client_telegram_id));\n\n    sessions.push({\n      club: slot.club,\n      clubName: CLUBS[slot.club] || slot.club,\n      weekday: slot.weekday,\n      time: slot.time,\n      date,\n      capacity: slot.capacity,\n      roster\n    });\n  }\n}\nsessions.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));\n\nreturn [{ json: { sessions } }];\n"
+        "jsCode": "// Список для адміна тепер береться з листа sessions (той самий, що й schedule.js).\nconst SLOTS = $('Читати sessions (admin)').all().map(i => i.json)\n  .filter(r => String(r.active).trim().toUpperCase() === 'TRUE')\n  .map(r => ({ club: String(r.club_id), weekday: Number(r.weekday), time: String(r.time), capacity: Number(r.capacity) }));\n\nconst CLUBS = {\n  c2: \"CrossGYM — 95 квартал\",\n  c3: \"CrossGYM — Вечірній\"\n};\nconst DAYS_AHEAD = 14;\n\nconst bookings = $input.all().map(i => i.json);\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\n\nconst now = new Date();\nconst sessions = [];\nfor (let d = 0; d < DAYS_AHEAD; d++) {\n  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);\n  const weekday = day.getDay();\n  for (const slot of SLOTS) {\n    if (slot.weekday !== weekday) continue;\n    const date = dateStr(day);\n    if (d === 0) {\n      const [hh, mm] = slot.time.split(':').map(Number);\n      const sessionTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);\n      if (sessionTime <= now) continue;\n    }\n    const roster = bookings.filter(b =>\n      String(b.club_id) === slot.club &&\n      Number(b.weekday) === slot.weekday &&\n      String(b.time) === slot.time &&\n      String(b.session_date) === date &&\n      String(b.status) === 'active'\n    ).map(b => b.client_name || ('id ' + b.client_telegram_id));\n\n    sessions.push({\n      club: slot.club,\n      clubName: CLUBS[slot.club] || slot.club,\n      weekday: slot.weekday,\n      time: slot.time,\n      date,\n      capacity: slot.capacity,\n      roster\n    });\n  }\n}\nsessions.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));\n\nreturn [{ json: { sessions } }];\n"
       },
       "id": "7b053926-70e9-40d3-8297-7c31392bf88a",
       "name": "Список для адміна",
@@ -745,6 +746,93 @@
         272,
         -608
       ]
+    },
+    {
+      "id": "abfa1360-0513-4ae2-9445-9110e7e3c915",
+      "name": "Читати sessions (book)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -576,
+        160
+      ],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "sessions"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "id": "de23dfbe-165c-4b06-aa3a-abc1eaa0bb40",
+      "name": "Читати sessions (schedule)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -576,
+        -400
+      ],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "sessions"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
+    },
+    {
+      "id": "9de79a2b-4dcf-45f7-9196-c80d45ab7c2f",
+      "name": "Читати sessions (admin)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -344,
+        -608
+      ],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "sessions"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "telegram trainer bot"
+        }
+      }
     }
   ],
   "connections": {
@@ -764,17 +852,6 @@
         [
           {
             "node": "Віддати сторінку",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "POST /trainer-booking-book": {
-      "main": [
-        [
-          {
-            "node": "Перевірка підпису",
             "type": "main",
             "index": 0
           }
@@ -960,17 +1037,6 @@
         ]
       ]
     },
-    "POST /trainer-booking-schedule": {
-      "main": [
-        [
-          {
-            "node": "Читати записи (schedule)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Читати записи (schedule)": {
       "main": [
         [
@@ -1004,17 +1070,6 @@
         ]
       ]
     },
-    "Перевірка адміна": {
-      "main": [
-        [
-          {
-            "node": "Читати записи (admin)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Читати записи (admin)": {
       "main": [
         [
@@ -1036,6 +1091,72 @@
           }
         ]
       ]
+    },
+    "POST /trainer-booking-book": {
+      "main": [
+        [
+          {
+            "node": "Читати sessions (book)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати sessions (book)": {
+      "main": [
+        [
+          {
+            "node": "Перевірка підпису",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /trainer-booking-schedule": {
+      "main": [
+        [
+          {
+            "node": "Читати sessions (schedule)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати sessions (schedule)": {
+      "main": [
+        [
+          {
+            "node": "Читати записи (schedule)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Перевірка адміна": {
+      "main": [
+        [
+          {
+            "node": "Читати sessions (admin)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Читати sessions (admin)": {
+      "main": [
+        [
+          {
+            "node": "Читати записи (admin)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -1043,7 +1164,7 @@
     "binaryMode": "separate",
     "timeSavedMode": "fixed",
     "callerPolicy": "workflowsFromSameOwner",
-    "availableInMCP": false
+    "availableInMCP": true
   },
   "staticData": null,
   "meta": {
