@@ -67,6 +67,24 @@ HMAC-SHA256 verification wasn't available. I implemented SHA-256 and HMAC in pla
 JavaScript inside the Code node, and validated it against 375+ reference test vectors
 before it touched a real booking.
 
+## Notable problem: capacity duplicated across three Code nodes
+
+Session capacity (`{ club, weekday, time, capacity }`) was hardcoded as an
+identical array literal in three separate Code nodes — "Розклад" (the
+schedule endpoint), "Список для адміна" (the admin roster endpoint), and
+"Перевірка підпису" (the signature-verification endpoint that validates a
+booking server-side). Changing the trainer's group size meant editing the
+same array in three places and keeping them in sync by hand; one missed edit
+would silently desync capacity between what a client sees and what the
+server actually enforces.
+
+Fixed by extracting the array into a `sessions` sheet in the same Google
+Sheets document, read by all three nodes at request time. The signature
+verification logic itself (SHA-256/HMAC-SHA256 implementation) was untouched
+— only the slot-lookup step downstream of it changed. The trainer can now
+change class capacity by editing a spreadsheet cell; no redeploy, no risk of
+the three copies drifting apart.
+
 ## Stack
 
 Static HTML/CSS/JS · Telegram Web App SDK · n8n · Google Sheets
