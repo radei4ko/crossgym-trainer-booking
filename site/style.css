@@ -28,6 +28,18 @@ body {
   background-attachment: fixed;
 }
 
+/* ---------- перемикач мови ---------- */
+.langrow { display: flex; gap: 6px; justify-content: flex-end; padding: 16px 16px 0; }
+.langbtn {
+  background: var(--card); border: 1px solid var(--sep); border-radius: 8px;
+  padding: 4px 10px; font-size: 12.5px; font-weight: 700; color: var(--muted);
+  cursor: pointer; font-family: inherit;
+}
+.langbtn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--onaccent); border-color: transparent;
+}
+
 /* ---------- візитка тренера ---------- */
 .hero {
   margin: 18px 16px 4px; padding: 20px 18px; border-radius: 20px;
